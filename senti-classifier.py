@@ -5,11 +5,12 @@ import sklearn
 def load_corpus():
     features_sets = []
     with open("./data/train.txt", encoding = "ISO-8859-1") as f:
-        line = f.read()
-        tokens = nltk.word_tokenize(line, 'english')
-        sentences = tokens[1:len(tokens)-2]
-        label = tokens[len(tokens-1)]
-        features_sets.append((get_features_count(sentences), label))
+        next(f)
+        for line in f:
+            tokens = nltk.word_tokenize(line, 'english')
+            sentences = tokens[1:len(tokens)-2]
+            label = tokens[len(tokens)-1]
+            features_sets.append((get_features_count(sentences), label))
     return features_sets
 
 def get_features_count(tokens):
@@ -37,7 +38,7 @@ def main():
     for test in test_set:
         real_test_classes.append(test[1])
         predicted_test_classes.append(classifier.classify(test[0]))
-    print("F1 Score " + str(sklearn.metrics.f1_score(real_test_classes, predicted_test_classes)))
+    print("F1 Score " + str(sklearn.metrics.f1_score(real_test_classes, predicted_test_classes,average='macro')))
 
 if __name__ == "__main__":
    main()
