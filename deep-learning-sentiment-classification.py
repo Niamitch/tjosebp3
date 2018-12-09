@@ -56,8 +56,8 @@ class SentimentAnalyser(object):
                 sentences.extend(doc.sents)
             Xs = get_features(sentences, self.max_length)
             ys = self._model.predict(Xs)
-            # for sent, label in zip(sentences, ys):
-            #     sent.doc.sentiment += label - 0.5
+            for sent, label in zip(sentences, ys):
+                sent.doc.user_data['output_labels'] = numpy.where(label == numpy.amax(label), 1, 0)
             for doc in minibatch:
                 yield doc
 
@@ -152,7 +152,7 @@ def evaluate(model_dir, texts, labels, max_length=100):
     correct = 0
     i = 0
     for doc in nlp.pipe(texts, batch_size=1000, n_threads=4):
-        correct += bool(doc.sentiment >= 0.5) == bool(labels[i])
+        correct += 1 if (doc.user_data['output_labels'] == numpy.asarray(labels[i])).all() else 0
         i += 1
     return float(correct) / i
 
@@ -191,8 +191,8 @@ def main():
     nr_hidden = 64
     max_length = 100  # Shape
     dropout = 0.5
-    learn_rate = 0.01  # General NN config
-    nb_epoch = 1
+    learn_rate = 0.02
+    nb_epoch = 10
     batch_size = 256
     nr_class = 4
 
@@ -220,8 +220,8 @@ def main():
         with (model_dir / 'config.json').open('w') as file_:
             file_.write(lstm.to_json())
 
-    # nb_correct = evaluate(model_dir, test_texts, test_labels)
-    # print("Number of correct: " + str(nb_correct) + " on " + str(len(test_texts)))
+    nb_correct = evaluate(model_dir, test_texts, test_labels)
+    print("Percent of correct prediction: " + str(nb_correct))
 
 
 if __name__ == '__main__':
