@@ -23,6 +23,7 @@ from nltk.corpus import stopwords
 from sklearn.preprocessing import OneHotEncoder
 from spacy.compat import pickle
 import spacy
+import re
 
 nltk.download('punkt')
 nltk.download('stopwords')
@@ -180,7 +181,7 @@ def load_corpus():
         next(f)
         for line in f:
             tokens = nltk.word_tokenize(line, 'english')
-            sentence = ''.join(tokens[1:len(tokens)-2])
+            sentence = ' '.join(tokens[1:len(tokens)-2])
             label = labels_to_one_hot_vector[tokens[len(tokens) - 1]]
             sentences.append((sentence, label))
     return zip(*sentences)
