@@ -51,7 +51,7 @@ def main():
     for test in test_set:
         real_test_classes.append(test[1])
         predicted_test_classes.append(classifier.classify(test[0]))
-    print("F1 Score " + str(sklearn.metrics.f1_score(real_test_classes, predicted_test_classes,average='macro')))
+    print("Accuracy Score " + str(sklearn.metrics.accuracy_score(real_test_classes, predicted_test_classes)))
 
 if __name__ == "__main__":
    main()
