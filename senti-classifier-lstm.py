@@ -9,21 +9,18 @@ Compatible with: spaCy v2.0.0+
 """
 import nltk as nltk
 import plac
-import random
 import pathlib
 import cytoolz
 import numpy
-import sklearn
 from keras.models import Sequential, model_from_json
 from keras.layers import LSTM, Dense, Embedding, Bidirectional
 from keras.layers import TimeDistributed
 from keras.optimizers import Adam
-import thinc.extra.datasets
 from nltk.corpus import stopwords
 from sklearn.preprocessing import OneHotEncoder
 from spacy.compat import pickle
 import spacy
-import re
+from keras.utils.vis_utils import plot_model
 
 nltk.download('punkt')
 nltk.download('stopwords')
@@ -104,6 +101,10 @@ def train(train_texts, train_labels, dev_texts, dev_labels,
     nlp.add_pipe(nlp.create_pipe('sentencizer'))
     embeddings = get_embeddings(nlp.vocab)
     model = compile_lstm(embeddings, lstm_shape, lstm_settings)
+    plot_model(model,
+               to_file='./model/rnn_lstm_model.png',
+               show_shapes=True,
+               show_layer_names=True)
 
     print("Parsing texts...")
     train_docs = list(nlp.pipe(train_texts))
