@@ -7,19 +7,26 @@ pip install keras==2.0.9
 
 Compatible with: spaCy v2.0.0+
 """
-
+import nltk as nltk
 import plac
 import random
 import pathlib
 import cytoolz
 import numpy
+import sklearn
 from keras.models import Sequential, model_from_json
 from keras.layers import LSTM, Dense, Embedding, Bidirectional
 from keras.layers import TimeDistributed
 from keras.optimizers import Adam
 import thinc.extra.datasets
+from nltk.corpus import stopwords
+from sklearn.preprocessing import OneHotEncoder
 from spacy.compat import pickle
 import spacy
+import re
+
+nltk.download('punkt')
+nltk.download('stopwords')
 
 
 class SentimentAnalyser(object):
@@ -51,7 +58,7 @@ class SentimentAnalyser(object):
             Xs = get_features(sentences, self.max_length)
             ys = self._model.predict(Xs)
             for sent, label in zip(sentences, ys):
-                sent.doc.sentiment += label - 0.5
+                sent.doc.user_data['output_labels'] = numpy.where(label == numpy.amax(label), 1, 0)
             for doc in minibatch:
                 yield doc
 
@@ -146,76 +153,76 @@ def evaluate(model_dir, texts, labels, max_length=100):
     correct = 0
     i = 0
     for doc in nlp.pipe(texts, batch_size=1000, n_threads=4):
-        correct += bool(doc.sentiment >= 0.5) == bool(labels[i])
+        correct += 1 if (doc.user_data['output_labels'] == numpy.asarray(labels[i])).all() else 0
         i += 1
     return float(correct) / i
 
+def remove_stopwords(sentences):
+    filtered_sentenes = []
+    stop_words = set(stopwords.words('english'))
+    for word in sentences:
+        if word not in stop_words:
+            filtered_sentenes.append(word)
+    return filtered_sentenes
 
-def read_data(data_dir, limit=0):
-    examples = []
-    for subdir, label in (('pos', 1), ('neg', 0)):
-        for filename in (data_dir / subdir).iterdir():
-            with filename.open() as file_:
-                text = file_.read()
-            examples.append((text, label))
-    random.shuffle(examples)
-    if limit >= 1:
-        examples = examples[:limit]
-    return zip(*examples)  # Unzips into two lists
+def load_corpus():
+
+    labels_to_one_hot_vector = {
+        "others": [1,0,0,0],
+        "angry": [0,1,0,0],
+        "sad": [0,0,1,0],
+        "happy": [0,0,0,1]
+    }
+
+    oneHotVector = OneHotEncoder(4)
+
+    sentences = []
+    with open("./data/train.txt", encoding = "ISO-8859-1") as f:
+        next(f)
+        for line in f:
+            tokens = nltk.word_tokenize(line, 'english')
+            sentence = ' '.join(tokens[1:len(tokens)-2])
+            label = labels_to_one_hot_vector[tokens[len(tokens) - 1]]
+            sentences.append((sentence, label))
+    return zip(*sentences)
 
 
-@plac.annotations(
-    train_dir=("Location of training file or directory"),
-    dev_dir=("Location of development file or directory"),
-    model_dir=("Location of output model directory",),
-    is_runtime=("Demonstrate run-time usage", "flag", "r", bool),
-    nr_hidden=("Number of hidden units", "option", "H", int),
-    max_length=("Maximum sentence length", "option", "L", int),
-    dropout=("Dropout", "option", "d", float),
-    learn_rate=("Learn rate", "option", "e", float),
-    nb_epoch=("Number of training epochs", "option", "i", int),
-    batch_size=("Size of minibatches for training LSTM", "option", "b", int),
-    nr_examples=("Limit to N examples", "option", "n", int)
-)
-def main(model_dir=None, train_dir=None, dev_dir=None,
-         is_runtime=False,
-         nr_hidden=64, max_length=100,  # Shape
-         dropout=0.5, learn_rate=0.001,  # General NN config
-         nb_epoch=5, batch_size=256, nr_examples=-1):  # Training params
+def main():
+    model_dir = pathlib.Path("./model/")
+    nr_hidden = 64
+    max_length = 100  # Shape
+    dropout = 0.5
+    learn_rate = 0.02
+    nb_epoch = 10
+    batch_size = 256
+    nr_class = 4
+
+    print("Read data")
+    sentences, labels = load_corpus()
+    sentences = remove_stopwords(sentences)
+    size = len(sentences)
+    train_texts, train_labels = sentences[:int(size * 0.6)], labels[:int(size * 0.6)]
+    dev_texts, dev_labels = sentences[int(size * 0.6):int(size * 0.8)], labels[int(size * 0.6):int(size * 0.8)]
+    test_texts, test_labels = sentences[int(size * 0.8):], labels[int(size * 0.8):]
+
+    train_labels = numpy.asarray(train_labels, dtype='int32')
+    dev_labels = numpy.asarray(dev_labels, dtype='int32')
+    lstm = train(train_texts, train_labels, dev_texts, dev_labels,
+                 {'nr_hidden': nr_hidden, 'max_length': max_length, 'nr_class': nr_class},
+                 {'dropout': dropout, 'lr': learn_rate},
+                 {},
+                 nb_epoch=nb_epoch, batch_size=batch_size)
+    print("Model has been trained!")
+
+    weights = lstm.get_weights()
     if model_dir is not None:
-        model_dir = pathlib.Path(model_dir)
-    if train_dir is None or dev_dir is None:
-        imdb_data = thinc.extra.datasets.imdb()
-    if is_runtime:
-        if dev_dir is None:
-            dev_texts, dev_labels = zip(*imdb_data[1])
-        else:
-            dev_texts, dev_labels = read_data(dev_dir)
-        acc = evaluate(model_dir, dev_texts, dev_labels, max_length=max_length)
-        print(acc)
-    else:
-        if train_dir is None:
-            train_texts, train_labels = zip(*imdb_data[0])
-        else:
-            print("Read data")
-            train_texts, train_labels = read_data(train_dir, limit=nr_examples)
-        if dev_dir is None:
-            dev_texts, dev_labels = zip(*imdb_data[1])
-        else:
-            dev_texts, dev_labels = read_data(dev_dir, imdb_data, limit=nr_examples)
-        train_labels = numpy.asarray(train_labels, dtype='int32')
-        dev_labels = numpy.asarray(dev_labels, dtype='int32')
-        lstm = train(train_texts, train_labels, dev_texts, dev_labels,
-                     {'nr_hidden': nr_hidden, 'max_length': max_length, 'nr_class': 1},
-                     {'dropout': dropout, 'lr': learn_rate},
-                     {},
-                     nb_epoch=nb_epoch, batch_size=batch_size)
-        weights = lstm.get_weights()
-        if model_dir is not None:
-            with (model_dir / 'model').open('wb') as file_:
-                pickle.dump(weights[1:], file_)
-            with (model_dir / 'config.json').open('w') as file_:
-                file_.write(lstm.to_json())
+        with (model_dir / 'model').open('wb') as file_:
+            pickle.dump(weights[1:], file_)
+        with (model_dir / 'config.json').open('w') as file_:
+            file_.write(lstm.to_json())
+
+    nb_correct = evaluate(model_dir, test_texts, test_labels)
+    print("Percent of correct prediction: " + str(nb_correct))
 
 
 if __name__ == '__main__':
